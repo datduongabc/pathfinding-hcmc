@@ -1,0 +1,310 @@
+{
+  "snapshots": [
+    {
+      "captured_at": "2026-09-17T08:07:41.230965+07:00",
+      "hour": 8.116666666666667,
+      "corridors": {
+        "\u0110i\u1ec7n Bi\u00ean Ph\u1ee7": {
+          "lat": 10.7893,
+          "lon": 106.6923,
+          "current_speed_kmh": 10,
+          "free_flow_speed_kmh": 33,
+          "confidence": 0.98912,
+          "ratio": 0.30303030303030304
+        },
+        "C\u00e1ch M\u1ea1ng Th\u00e1ng T\u00e1m": {
+          "lat": 10.7769,
+          "lon": 106.6883,
+          "current_speed_kmh": 16,
+          "free_flow_speed_kmh": 28,
+          "confidence": 0.971596,
+          "ratio": 0.5714285714285714
+        },
+        "Nguy\u1ec5n V\u0103n C\u1eeb": {
+          "lat": 10.7592,
+          "lon": 106.6822,
+          "current_speed_kmh": 16,
+          "free_flow_speed_kmh": 27,
+          "confidence": 0.817565,
+          "ratio": 0.5925925925925926
+        },
+        "V\u00f5 V\u0103n Ki\u1ec7t": {
+          "lat": 10.7472,
+          "lon": 106.6934,
+          "current_speed_kmh": 22,
+          "free_flow_speed_kmh": 32,
+          "confidence": 0.932492,
+          "ratio": 0.6875
+        },
+        "Hai B\u00e0 Tr\u01b0ng": {
+          "lat": 10.7852,
+          "lon": 106.7008,
+          "current_speed_kmh": 28,
+          "free_flow_speed_kmh": 41,
+          "confidence": 0.996711,
+          "ratio": 0.6829268292682927
+        },
+        "Nam K\u1ef3 Kh\u1edfi Ngh\u0129a": {
+          "lat": 10.7797,
+          "lon": 106.6947,
+          "current_speed_kmh": 13,
+          "free_flow_speed_kmh": 33,
+          "confidence": 1,
+          "ratio": 0.3939393939393939
+        },
+        "L\u00fd Th\u01b0\u1eddng Ki\u1ec7t": {
+          "lat": 10.7724,
+          "lon": 106.6588,
+          "current_speed_kmh": 16,
+          "free_flow_speed_kmh": 29,
+          "confidence": 0.823872,
+          "ratio": 0.5517241379310345
+        },
+        "X\u00f4 Vi\u1ebft Ngh\u1ec7 T\u0129nh": {
+          "lat": 10.8015,
+          "lon": 106.7099,
+          "current_speed_kmh": 39,
+          "free_flow_speed_kmh": 39,
+          "confidence": 1,
+          "ratio": 1.0
+        },
+        "\u0110\u01b0\u1eddng 3 Th\u00e1ng 2": {
+          "lat": 10.7679,
+          "lon": 106.6688,
+          "current_speed_kmh": 11,
+          "free_flow_speed_kmh": 32,
+          "confidence": 0.98,
+          "ratio": 0.34375
+        },
+        "Nguy\u1ec5n Th\u1ecb Minh Khai": {
+          "lat": 10.7808,
+          "lon": 106.6939,
+          "current_speed_kmh": 13,
+          "free_flow_speed_kmh": 33,
+          "confidence": 1,
+          "ratio": 0.3939393939393939
+        },
+        "Tr\u1ea7n H\u01b0ng \u0110\u1ea1o": {
+          "lat": 10.7547713,
+          "lon": 106.6789487,
+          "current_speed_kmh": 20,
+          "free_flow_speed_kmh": 32,
+          "confidence": 0.960736,
+          "ratio": 0.625
+        },
+        "Nguy\u1ec5n Tr\u00e3i": {
+          "lat": 10.7530389,
+          "lon": 106.6614172,
+          "current_speed_kmh": 14,
+          "free_flow_speed_kmh": 25,
+          "confidence": 0.978201,
+          "ratio": 0.56
+        }
+      }
+    },
+    {
+      "captured_at": "2026-09-17T08:35:07.585705+07:00",
+      "hour": 8.583333333333334,
+      "corridors": {
+        "Nam K\u1ef3 Kh\u1edfi Ngh\u0129a": {
+          "lat": 10.7797,
+          "lon": 106.6947,
+          "current_speed_kmh": 11,
+          "free_flow_speed_kmh": 32,
+          "confidence": 1,
+          "ratio": 0.34375
+        },
+        "Nguy\u1ec5n Tr\u00e3i": {
+          "lat": 10.7530389,
+          "lon": 106.6614172,
+          "current_speed_kmh": 14,
+          "free_flow_speed_kmh": 25,
+          "confidence": 0.962251,
+          "ratio": 0.56
+        },
+        "\u0110\u01b0\u1eddng 3 Th\u00e1ng 2": {
+          "lat": 10.7679,
+          "lon": 106.6688,
+          "current_speed_kmh": 11,
+          "free_flow_speed_kmh": 31,
+          "confidence": 0.997778,
+          "ratio": 0.3548387096774194
+        },
+        "Nguy\u1ec5n V\u0103n C\u1eeb": {
+          "lat": 10.7592,
+          "lon": 106.6822,
+          "current_speed_kmh": 15,
+          "free_flow_speed_kmh": 27,
+          "confidence": 0.944737,
+          "ratio": 0.5555555555555556
+        },
+        "Tr\u1ea7n H\u01b0ng \u0110\u1ea1o": {
+          "lat": 10.7547713,
+          "lon": 106.6789487,
+          "current_speed_kmh": 21,
+          "free_flow_speed_kmh": 32,
+          "confidence": 0.921548,
+          "ratio": 0.65625
+        },
+        "X\u00f4 Vi\u1ebft Ngh\u1ec7 T\u0129nh": {
+          "lat": 10.8015,
+          "lon": 106.7099,
+          "current_speed_kmh": 24,
+          "free_flow_speed_kmh": 39,
+          "confidence": 0.95,
+          "ratio": 0.6153846153846154
+        },
+        "V\u00f5 V\u0103n Ki\u1ec7t": {
+          "lat": 10.7472,
+          "lon": 106.6934,
+          "current_speed_kmh": 24,
+          "free_flow_speed_kmh": 32,
+          "confidence": 0.965399,
+          "ratio": 0.75
+        },
+        "L\u00fd Th\u01b0\u1eddng Ki\u1ec7t": {
+          "lat": 10.7724,
+          "lon": 106.6588,
+          "current_speed_kmh": 16,
+          "free_flow_speed_kmh": 30,
+          "confidence": 0.968848,
+          "ratio": 0.5333333333333333
+        },
+        "C\u00e1ch M\u1ea1ng Th\u00e1ng T\u00e1m": {
+          "lat": 10.7769,
+          "lon": 106.6883,
+          "current_speed_kmh": 14,
+          "free_flow_speed_kmh": 28,
+          "confidence": 0.993674,
+          "ratio": 0.5
+        },
+        "Nguy\u1ec5n Th\u1ecb Minh Khai": {
+          "lat": 10.7808,
+          "lon": 106.6939,
+          "current_speed_kmh": 11,
+          "free_flow_speed_kmh": 32,
+          "confidence": 1,
+          "ratio": 0.34375
+        },
+        "Hai B\u00e0 Tr\u01b0ng": {
+          "lat": 10.7852,
+          "lon": 106.7008,
+          "current_speed_kmh": 28,
+          "free_flow_speed_kmh": 41,
+          "confidence": 0.998413,
+          "ratio": 0.6829268292682927
+        },
+        "\u0110i\u1ec7n Bi\u00ean Ph\u1ee7": {
+          "lat": 10.7893,
+          "lon": 106.6923,
+          "current_speed_kmh": 10,
+          "free_flow_speed_kmh": 30,
+          "confidence": 0.992897,
+          "ratio": 0.3333333333333333
+        }
+      }
+    },
+    {
+      "captured_at": "2026-09-21T10:52:49.218254+07:00",
+      "hour": 10.866666666666667,
+      "corridors": {
+        "\u0110\u01b0\u1eddng 3 Th\u00e1ng 2": {
+          "lat": 10.7679,
+          "lon": 106.6688,
+          "current_speed_kmh": 9,
+          "free_flow_speed_kmh": 32,
+          "confidence": 0.985405,
+          "ratio": 0.28125
+        },
+        "Nguy\u1ec5n Tr\u00e3i": {
+          "lat": 10.7530389,
+          "lon": 106.6614172,
+          "current_speed_kmh": 14,
+          "free_flow_speed_kmh": 26,
+          "confidence": 0.958049,
+          "ratio": 0.5384615384615384
+        },
+        "Tr\u1ea7n H\u01b0ng \u0110\u1ea1o": {
+          "lat": 10.7547713,
+          "lon": 106.6789487,
+          "current_speed_kmh": 18,
+          "free_flow_speed_kmh": 32,
+          "confidence": 0.984218,
+          "ratio": 0.5625
+        },
+        "V\u00f5 V\u0103n Ki\u1ec7t": {
+          "lat": 10.7472,
+          "lon": 106.6934,
+          "current_speed_kmh": 23,
+          "free_flow_speed_kmh": 32,
+          "confidence": 0.841021,
+          "ratio": 0.71875
+        },
+        "X\u00f4 Vi\u1ebft Ngh\u1ec7 T\u0129nh": {
+          "lat": 10.8015,
+          "lon": 106.7099,
+          "current_speed_kmh": 39,
+          "free_flow_speed_kmh": 39,
+          "confidence": 1,
+          "ratio": 1.0
+        },
+        "L\u00fd Th\u01b0\u1eddng Ki\u1ec7t": {
+          "lat": 10.7724,
+          "lon": 106.6588,
+          "current_speed_kmh": 15,
+          "free_flow_speed_kmh": 29,
+          "confidence": 0.96154,
+          "ratio": 0.5172413793103449
+        },
+        "Nam K\u1ef3 Kh\u1edfi Ngh\u0129a": {
+          "lat": 10.7797,
+          "lon": 106.6947,
+          "current_speed_kmh": 12,
+          "free_flow_speed_kmh": 33,
+          "confidence": 1,
+          "ratio": 0.36363636363636365
+        },
+        "C\u00e1ch M\u1ea1ng Th\u00e1ng T\u00e1m": {
+          "lat": 10.7769,
+          "lon": 106.6883,
+          "current_speed_kmh": 12,
+          "free_flow_speed_kmh": 28,
+          "confidence": 0.983064,
+          "ratio": 0.42857142857142855
+        },
+        "Nguy\u1ec5n V\u0103n C\u1eeb": {
+          "lat": 10.7592,
+          "lon": 106.6822,
+          "current_speed_kmh": 15,
+          "free_flow_speed_kmh": 27,
+          "confidence": 0.919561,
+          "ratio": 0.5555555555555556
+        },
+        "Nguy\u1ec5n Th\u1ecb Minh Khai": {
+          "lat": 10.7808,
+          "lon": 106.6939,
+          "current_speed_kmh": 12,
+          "free_flow_speed_kmh": 33,
+          "confidence": 1,
+          "ratio": 0.36363636363636365
+        },
+        "Hai B\u00e0 Tr\u01b0ng": {
+          "lat": 10.7852,
+          "lon": 106.7008,
+          "current_speed_kmh": 28,
+          "free_flow_speed_kmh": 41,
+          "confidence": 0.998896,
+          "ratio": 0.6829268292682927
+        },
+        "\u0110i\u1ec7n Bi\u00ean Ph\u1ee7": {
+          "lat": 10.7893,
+          "lon": 106.6923,
+          "current_speed_kmh": 14,
+          "free_flow_speed_kmh": 30,
+          "confidence": 0.997618,
+          "ratio": 0.4666666666666667
+        }
+      }
+    }
+  ]
+}
