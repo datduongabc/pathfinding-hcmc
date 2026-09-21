@@ -1,9 +1,13 @@
 import json
 import os
+from datetime import datetime
 
+import networkx as nx
 import pytest
 
 from src import calibration
+
+GRAPH_PATH = "data/graph.graphml"
 
 
 class FakeResponse:
@@ -12,6 +16,8 @@ class FakeResponse:
         self.status_code = status_code
 
     def raise_for_status(self):
+        # Any exception will do: the code under test only needs it to
+        # propagate, not to be a requests-specific type.
         if self.status_code != 200:
             raise RuntimeError(f"HTTP {self.status_code}")
 
@@ -44,10 +50,25 @@ def test_fetch_corridor_snapshot_computes_ratio():
     assert 0.0 <= snapshot["hour"] < 24.0
 
 
+def test_snapshot_hour_is_hcmc_local_time_not_the_machines(monkeypatch):
+    """The time-of-day model is in HCMC hours (UTC+7). A snapshot stamped in
+    the machine's own timezone would be fitted against the wrong multiplier."""
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 9, 21, 5, 30, tzinfo=tz)  # 05:30 in the tz asked for
+
+    monkeypatch.setattr(calibration, "datetime", FixedDatetime)
+    session = FakeSession(default_payload=_flow_payload(20, 40))
+    snapshot = calibration.fetch_corridor_snapshot("fake-key", {"Test St": (10.0, 106.0)}, session=session)
+
+    assert snapshot["hour"] == pytest.approx(5.5)
+    assert snapshot["captured_at"].endswith("+07:00")
+
+
 def test_fetch_corridor_snapshot_collects_all_corridors_concurrently():
-    """Corridor requests are fired in parallel (one thread each) rather than
-    one-by-one; every corridor's result must still land in the output
-    regardless of thread completion order."""
+    """Requests run in parallel, so results arrive in any order; every
+    corridor must still land in the output."""
     corridors = {
         "A St": (10.0, 106.0),
         "B St": (10.1, 106.1),
@@ -115,10 +136,9 @@ def test_calibrate_recovers_from_malformed_existing_file(tmp_path):
 
 
 def test_calibrate_recovers_from_structurally_invalid_but_syntactically_valid_json(tmp_path):
-    """Syntactically valid JSON whose shape is still wrong (e.g. "snapshots"
-    not a list) must not crash calibrate() with an AttributeError from
-    `existing.setdefault("snapshots", []).append(...)` - it should degrade
-    the same way a plain JSON-syntax error already does."""
+    """Valid JSON with the wrong shape (e.g. "snapshots" not a list) must be
+    handled like unparsable JSON - start a fresh file - rather than crash
+    on the append."""
     output_path = tmp_path / "calib.json"
     output_path.write_text(json.dumps({"snapshots": "not-a-list"}), encoding="utf-8")
 
@@ -130,17 +150,12 @@ def test_calibrate_recovers_from_structurally_invalid_but_syntactically_valid_js
     assert len(saved["snapshots"]) == 1
 
 
-GRAPH_PATH = "data/graph.graphml"
-
-
 @pytest.mark.skipif(not os.path.exists(GRAPH_PATH), reason="cached graph not present")
 def test_corridors_keys_match_real_edge_names_in_the_committed_graph():
-    """Regression test for a bug where CORRIDORS used ASCII-transliterated
-    street names (e.g. "Dien Bien Phu") that never matched the
-    diacritic-bearing `name` OSMnx actually stores on graph edges, so the
-    live TomTom calibration data silently never affected any edge cost."""
-    import networkx as nx
-
+    """A corridor whose name matches no graph edge fails silently: its
+    calibration is fetched and stored but never affects any edge cost. Names
+    must match exactly, diacritics included (e.g. "Điện Biên Phủ", not
+    "Dien Bien Phu")."""
     graph = nx.read_graphml(GRAPH_PATH)
     edge_names = {d["name"] for _, _, d in graph.edges(data=True) if "name" in d}
 

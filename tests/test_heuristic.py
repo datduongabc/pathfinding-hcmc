@@ -1,12 +1,19 @@
 import os
+import random
 
+import networkx as nx
+import osmnx as ox
 import pytest
 
 from src import heuristic, traffic_model
+from src.astar import NoPathFoundError, find_path
+
+GRAPH_PATH = "data/graph.graphml"
 
 # Three collinear points (same longitude, varying latitude) used throughout
-# this file for closed-form admissibility/consistency checks - see the
-# "Why a window, and why 3 hours" section of the design spec.
+# this file. Collinearity makes the true cost-to-go a closed-form sum of two
+# straight legs, so admissibility and consistency can be checked exactly
+# instead of by searching.
 POINT_A = (10.80, 106.70)
 POINT_B = (10.78, 106.70)
 POINT_GOAL = (10.70, 106.70)
@@ -16,10 +23,11 @@ DIST_A_GOAL_KM = heuristic.haversine_km(*POINT_A, *POINT_GOAL)
 V_FREE_BOUND = 80.0  # motorway class, matches the synthetic edges below
 
 
-def old_unwindowed_heuristic_hours(lat, lon, goal_lat, goal_lon, hour, v_free_bound_kmh):
-    """Reproduction of the pre-fix heuristic (bounds by m_time(t) only, not
-    the windowed max) - kept only to demonstrate the admissibility bug it
-    had, per the design spec's "Why a window, and why 3 hours" section."""
+def naive_heuristic_hours(lat, lon, goal_lat, goal_lon, hour, v_free_bound_kmh):
+    """A naive heuristic that bounds speed by the multiplier at `hour` only,
+    not the best one within the look-ahead window. Kept as a foil: it
+    overestimates when traffic clears up mid-trip, which shows why the
+    windowed version is needed."""
     dist_km = heuristic.haversine_km(lat, lon, goal_lat, goal_lon)
     m_t = traffic_model.time_of_day_multiplier(hour)
     return dist_km / (v_free_bound_kmh * m_t)
@@ -54,22 +62,22 @@ def test_collinear_points_are_set_up_correctly():
     assert DIST_A_GOAL_KM == pytest.approx(DIST_AB_KM + DIST_B_GOAL_KM, abs=0.001)
 
 
-def test_windowed_heuristic_is_admissible_everywhere_old_one_was_not():
-    """Scanning a full day: the new (windowed) heuristic never overestimates
-    the true cost-to-go, but the old (unwindowed) one does somewhere -
-    demonstrating the exact bug the windowed heuristic fixes."""
+def test_windowed_heuristic_is_admissible_everywhere_naive_one_is_not():
+    """Scanning a full day: the windowed heuristic never overestimates the
+    true cost-to-go, but the naive (unwindowed) one does somewhere -
+    which is the failure the window exists to prevent."""
     hours = [h * 0.5 for h in range(48)]  # every 30 minutes across a day
-    old_violated_somewhere = False
+    naive_violated_somewhere = False
     for departure_hour in hours:
         true_cost = _true_cost_to_go(departure_hour)
-        new_h = heuristic.heuristic_hours(*POINT_A, *POINT_GOAL, departure_hour, V_FREE_BOUND)
-        old_h = old_unwindowed_heuristic_hours(*POINT_A, *POINT_GOAL, departure_hour, V_FREE_BOUND)
+        windowed_h = heuristic.heuristic_hours(*POINT_A, *POINT_GOAL, departure_hour, V_FREE_BOUND)
+        naive_h = naive_heuristic_hours(*POINT_A, *POINT_GOAL, departure_hour, V_FREE_BOUND)
 
-        assert new_h <= true_cost + 1e-9, f"windowed heuristic inadmissible at hour={departure_hour}"
-        if old_h > true_cost + 1e-9:
-            old_violated_somewhere = True
+        assert windowed_h <= true_cost + 1e-9, f"windowed heuristic inadmissible at hour={departure_hour}"
+        if naive_h > true_cost + 1e-9:
+            naive_violated_somewhere = True
 
-    assert old_violated_somewhere, "expected the old unwindowed heuristic to be inadmissible somewhere in the day"
+    assert naive_violated_somewhere, "expected the naive unwindowed heuristic to be inadmissible somewhere in the day"
 
 
 def test_consistency_holds_in_the_interior_of_a_plateau():
@@ -95,8 +103,6 @@ def test_consistency_can_fail_somewhere_in_the_day():
 
 
 def test_compute_free_flow_bound_kmh_picks_fastest_class_present():
-    import networkx as nx
-
     g = nx.MultiDiGraph()
     g.add_node("A", y=10.8, x=106.7)
     g.add_node("B", y=10.79, x=106.7)
@@ -105,23 +111,14 @@ def test_compute_free_flow_bound_kmh_picks_fastest_class_present():
 
 
 def test_compute_free_flow_bound_kmh_defaults_on_empty_graph():
-    import networkx as nx
-
     g = nx.MultiDiGraph()
     assert heuristic.compute_free_flow_bound_kmh(g) == traffic_model.DEFAULT_FREE_FLOW_SPEED_KMH
 
 
-GRAPH_PATH = "data/graph.graphml"
-
-
 @pytest.mark.skipif(not os.path.exists(GRAPH_PATH), reason="cached graph not present")
 def test_randomized_admissibility_spot_check_on_real_graph():
-    import random
-
-    import osmnx as ox
-
-    from src.astar import find_path
-
+    """Random start/goal pairs on the real road graph: the heuristic at the
+    start must not exceed the travel time A* actually finds."""
     graph = ox.load_graphml(GRAPH_PATH)
     v_free_bound = heuristic.compute_free_flow_bound_kmh(graph)
     nodes = list(graph.nodes(data=True))
@@ -132,8 +129,12 @@ def test_randomized_admissibility_spot_check_on_real_graph():
         (start_id, start_data), (goal_id, goal_data) = rng.sample(nodes, 2)
         hour = rng.uniform(0.0, 24.0)
         try:
-            result = find_path(graph, start_id, goal_id, hour, v_free_bound_kmh=v_free_bound)
-        except Exception:
+            # Empty bias keeps this independent of the committed TomTom data.
+            result = find_path(graph, start_id, goal_id, hour,
+                               v_free_bound_kmh=v_free_bound, corridor_bias={})
+        except NoPathFoundError:
+            # Random node pairs can land in different connected components.
+            # Any other exception is a real failure and must surface.
             continue
         h = heuristic.heuristic_hours(
             start_data["y"], start_data["x"], goal_data["y"], goal_data["x"], hour, v_free_bound)

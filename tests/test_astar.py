@@ -1,7 +1,14 @@
 import networkx as nx
 import pytest
 
-from src.astar import MissingEdgeLengthError, NoPathFoundError, find_path
+from src import heuristic, traffic_model
+from src.astar import (
+    MissingEdgeLengthError, NoPathFoundError, find_path, shortest_parallel_edge)
+
+# Every test passes an explicit (empty) corridor bias. Left to its default,
+# find_path reads data/tomtom_calibration.json, which would make these tests
+# depend on whichever snapshots happen to be committed.
+NO_BIAS = {}
 
 
 def _add_node(g, node_id, lat, lon):
@@ -25,7 +32,7 @@ def _linear_graph():
 
 def test_finds_path_on_simple_linear_graph():
     g = _linear_graph()
-    result = find_path(g, "A", "C", departure_hour=2.0)
+    result = find_path(g, "A", "C", departure_hour=2.0, corridor_bias=NO_BIAS)
     assert result.node_path == ["A", "B", "C"]
     assert result.total_travel_time_hours > 0
 
@@ -35,7 +42,7 @@ def test_disconnected_start_end_raises():
     _add_node(g, "A", 10.80, 106.70)
     _add_node(g, "Z", 10.50, 106.50)
     with pytest.raises(NoPathFoundError):
-        find_path(g, "A", "Z", departure_hour=8.0)
+        find_path(g, "A", "Z", departure_hour=8.0, corridor_bias=NO_BIAS)
 
 
 def test_edge_missing_length_raises_instead_of_treating_it_as_free():
@@ -47,19 +54,18 @@ def test_edge_missing_length_raises_instead_of_treating_it_as_free():
     _add_node(g, "B", 10.79, 106.70)
     g.add_edge("A", "B", highway="residential", name=None)  # no `length`
     with pytest.raises(MissingEdgeLengthError):
-        find_path(g, "A", "B", departure_hour=8.0)
+        find_path(g, "A", "B", departure_hour=8.0, corridor_bias=NO_BIAS)
 
 
 def test_path_cost_matches_manually_summed_edge_costs():
     g = _linear_graph()
-    result = find_path(g, "A", "C", departure_hour=8.0)
+    result = find_path(g, "A", "C", departure_hour=8.0, corridor_bias=NO_BIAS)
 
-    from src import traffic_model
     t = 8.0
     total = 0.0
     for u, v in [("A", "B"), ("B", "C")]:
         edge = g.get_edge_data(u, v)[0]
-        cost = traffic_model.edge_travel_time_hours(edge["length"], edge["highway"], edge["name"], t, {})
+        cost = traffic_model.edge_travel_time_hours(edge["length"], edge["highway"], edge["name"], t, NO_BIAS)
         total += cost
         t += cost
 
@@ -81,7 +87,7 @@ def test_time_dependence_changes_edge_speed_along_route():
     _add_edge(g, "A", "B", 33_000.0, highway="primary")
     _add_edge(g, "B", "C", 500.0, highway="primary")
 
-    result = find_path(g, "A", "C", departure_hour=8.0)
+    result = find_path(g, "A", "C", departure_hour=8.0, corridor_bias=NO_BIAS)
     assert result.edge_trace[1][2] > result.edge_trace[0][2]  # second edge's speed strictly exceeds the first's
 
 
@@ -105,7 +111,7 @@ def test_greedy_shortest_hop_path_differs_from_true_fastest_path():
     _add_edge(g, "A", "B2", 1400.0, highway="primary")     # 50 km/h free-flow
     _add_edge(g, "B2", "C", 1400.0, highway="primary")
 
-    result = find_path(g, "A", "C", departure_hour=8.0)  # rush hour
+    result = find_path(g, "A", "C", departure_hour=8.0, corridor_bias=NO_BIAS)  # rush hour
     assert result.node_path == ["A", "B2", "C"]  # longer-but-faster road wins
 
 
@@ -123,60 +129,31 @@ def test_correct_despite_crossing_a_recovery_window():
     _add_edge(g, "A", "D", 200.0, highway="residential")
     _add_edge(g, "D", "C", 50_000.0, highway="residential")  # much longer detour
 
-    result = find_path(g, "A", "C", departure_hour=9.0)
+    result = find_path(g, "A", "C", departure_hour=9.0, corridor_bias=NO_BIAS)
     assert result.node_path == ["A", "B", "C"]
 
 
 def test_genuine_reopening_after_expansion_beats_premature_pop():
-    """Forces the specific scenario reopening exists to handle: a node
-    popped and *expanded* (its own successors already relaxed), then later
-    rediscovered via a different route with a strictly better g, requiring
-    it to be reopened after having already been "closed" once.
+    """Forces the case reopening exists for: a node is popped and expanded,
+    then reached again by another route with a strictly better arrival time,
+    so it must be expanded a second time.
 
-    This can only be forced by routing a real edge traversal through one of
-    the narrow windows where the windowed heuristic is locally inconsistent
-    (see test_heuristic.py's `test_consistency_can_fail_somewhere_in_the_day`
-    and its crossing-point derivation) - everywhere else, admissibility +
-    consistency together guarantee "first pop is final," so no genuine
-    reopening-after-expansion can ever be forced there.
+    That only happens where the heuristic is inconsistent, hence departure
+    at 16.65h, inside the evening window covered by
+    test_heuristic.py::test_consistency_can_fail_somewhere_in_the_day.
+    Elsewhere admissibility plus consistency make the first pop of a node
+    final.
 
-    Numeric derivation (reusing test_heuristic.py's collinear A/B/Goal
-    points and the same evening-window crossing hand-verified for Task 4/6,
-    t=16.65h, consistency gap +0.0014 on the A->X leg):
-      - A=(10.80,106.70), X=(10.78,106.70), Goal=(10.70,106.70), all on the
-        same meridian; A->X and X->Goal are motorway (80 km/h free-flow),
-        lengths equal to the exact haversine distances between those points.
-      - At departure_hour=16.65, cost(A,X)=0.047317h -> X's first arrival
-        is 16.697317h, with f(X)=16.881233 - strictly *less* than f(A)
-        itself (16.882625, i.e. h(A,16.65)) because the consistency
-        inequality is violated on this exact leg. This deceptively low f
-        is what causes X to be popped and expanded before the (better)
-        detour below is even considered - X's first-round expansion relaxes
-        X->Goal, arriving at 16.890474h (f=16.890474, since h(Goal)=0).
-      - Y is a second node co-located with A (same lat/lon, so h(Y,*)
-        matches h(A,*)), reached by a near-instant 10 m residential edge
-        (A->Y, cost~0.0004h). Its own f (~16.883266) lands strictly between
-        f(X)=16.881233 and f(Goal-via-X)=16.890474 - Y pops *after* X's
-        first expansion but *before* the algorithm can return the
-        goal-via-X-direct result.
-      - Y->X is a short 100 m motorway shortcut: expanding Y gives a second,
-        strictly better arrival at X (16.652809h < X's current best of
-        16.697317h) - forcing X to be reopened and re-pushed with a lower f
-        (16.838778), even though X had already been popped and expanded
-        once. Re-expanding X then finds a strictly better arrival at Goal
-        (16.842304h) than the stale, already-open direct-route entry
-        (16.890474h), which is what the algorithm ultimately returns.
-      - Without reopening (a permanent closed set blocking re-relaxation of
-        an already-expanded X), the search would return the direct route
-        A->X->Goal (total ~0.240474h) instead - strictly worse than the
-        actual optimum A->Y->X->Goal (~0.192304h) that reopening finds.
-
-    (Derived and iteratively confirmed via temporary pop-order
-    instrumentation during development; the shipped test below asserts only
-    on find_path's return value.)
+    Layout (A, X and Goal are collinear on one meridian):
+    - A -> X -> Goal is the direct motorway route. Consistency fails on
+      A -> X, so f(X) comes out lower than f(A) and X is popped and
+      expanded before the better route is even considered.
+    - Y sits at A's coordinates (so it has A's heuristic) and is reached by
+      a near-instant 10 m edge. Y -> X is a 100 m motorway shortcut, so
+      A -> Y -> X reaches X sooner than A -> X does.
+    - Without reopening the search returns the direct route (about
+      0.2405h). With it, A -> Y -> X -> Goal wins (about 0.1923h).
     """
-    from src import heuristic, traffic_model
-
     point_a = (10.80, 106.70)
     point_x = (10.78, 106.70)
     point_goal = (10.70, 106.70)
@@ -193,17 +170,17 @@ def test_genuine_reopening_after_expansion_beats_premature_pop():
     _add_edge(g, "A", "Y", 10.0, highway="residential")
     _add_edge(g, "Y", "X", 100.0, highway="motorway")
 
-    result = find_path(g, "A", "Goal", departure_hour=16.65, v_free_bound_kmh=80.0, corridor_bias={})
+    result = find_path(g, "A", "Goal", departure_hour=16.65, v_free_bound_kmh=80.0, corridor_bias=NO_BIAS)
 
     # The reopened detour is the one actually returned.
     assert result.node_path == ["A", "Y", "X", "Goal"]
 
     # It is strictly better than the direct route a non-reopening search
     # would have locked in on X's first (premature) expansion.
-    direct_cost_ax = traffic_model.edge_travel_time_hours(dist_ax_km * 1000.0, "motorway", None, 16.65, {})
+    direct_cost_ax = traffic_model.edge_travel_time_hours(dist_ax_km * 1000.0, "motorway", None, 16.65, NO_BIAS)
     direct_arrival_x = 16.65 + direct_cost_ax
     direct_cost_x_goal = traffic_model.edge_travel_time_hours(
-        dist_x_goal_km * 1000.0, "motorway", None, direct_arrival_x, {})
+        dist_x_goal_km * 1000.0, "motorway", None, direct_arrival_x, NO_BIAS)
     direct_total = direct_cost_ax + direct_cost_x_goal
     assert result.total_travel_time_hours < direct_total - 1e-9
 
@@ -212,7 +189,29 @@ def test_genuine_reopening_after_expansion_beats_premature_pop():
     total = 0.0
     for u, v in [("A", "Y"), ("Y", "X"), ("X", "Goal")]:
         edge = g.get_edge_data(u, v)[0]
-        cost = traffic_model.edge_travel_time_hours(edge["length"], edge["highway"], edge["name"], t, {})
+        cost = traffic_model.edge_travel_time_hours(edge["length"], edge["highway"], edge["name"], t, NO_BIAS)
         total += cost
         t += cost
     assert result.total_travel_time_hours == pytest.approx(total, rel=1e-6)
+
+
+def test_start_equal_to_goal_is_a_zero_cost_path():
+    g = _linear_graph()
+    result = find_path(g, "B", "B", departure_hour=8.0, corridor_bias=NO_BIAS)
+    assert result.node_path == ["B"]
+    assert result.total_travel_time_hours == 0.0
+    assert result.total_distance_km == 0.0
+
+
+def test_shortest_parallel_edge_picks_the_shortest_of_several_edges():
+    """OSMnx can keep several edges between the same two nodes. The search
+    and the map must agree on which one they use."""
+    g = nx.MultiDiGraph()
+    _add_node(g, "A", 10.80, 106.70)
+    _add_node(g, "B", 10.79, 106.70)
+    _add_edge(g, "A", "B", 1500.0, highway="residential")
+    _add_edge(g, "A", "B", 1100.0, highway="primary")
+
+    assert shortest_parallel_edge(g, "A", "B")["length"] == 1100.0
+    result = find_path(g, "A", "B", departure_hour=2.0, corridor_bias=NO_BIAS)
+    assert result.total_distance_km == pytest.approx(1.1)

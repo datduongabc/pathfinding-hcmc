@@ -1,14 +1,15 @@
 import os
 
 import geopandas as gpd
+import networkx as nx
 import pytest
-from shapely.geometry import Point
+from shapely.geometry import Point, Polygon
 
 from src import data_collection
 
-# The raw OSM tag keys/values the POI query asks for; `category` must be
-# derived from these, never hardcoded (a hardcoded fixture category is
-# exactly what let the missing-category bug ship).
+# The raw OSM tag keys/values the POI query asks for. `category` must be
+# derived from these, never hardcoded in a fixture: a hardcoded category
+# hides a missing derivation step.
 LISTED_TAG_VALUES = {
     value
     for values in data_collection.POI_TAGS.values()
@@ -35,10 +36,8 @@ def _fake_pois(n, start_lon=106.69, start_lat=10.77):
 
 def test_osmnx_bbox_is_west_south_east_north():
     """osmnx>=2.0 expects (left, bottom, right, top) = (west, south, east,
-    north) - this exact ordering bug has already shipped twice (two
-    separate historical fix commits, each correcting one of the two call
-    sites and missing the other), so it's locked down here against BBOX
-    directly rather than trusting the two call sites to stay in sync by hand."""
+    north). A wrong order does not raise, it just downloads the wrong area,
+    so the order is pinned here against BBOX."""
     assert data_collection.OSMNX_BBOX == (
         data_collection.BBOX["west"], data_collection.BBOX["south"],
         data_collection.BBOX["east"], data_collection.BBOX["north"],
@@ -110,10 +109,9 @@ def test_derive_category_accepts_any_value_for_open_ended_tag_keys():
 @pytest.mark.skipif(not os.path.exists(data_collection.POIS_PATH),
                     reason="cached POI file not present")
 def test_committed_pois_file_has_a_real_category_for_every_row():
-    """Regression guard for the shipped data, not just the code: every row
-    of the committed data/pois.geojson must carry a category that
-    visualization.py can color/cluster by, rather than silently falling
-    back to a single grey "other" bucket."""
+    """Guards the shipped data, not just the code: every row of the committed
+    data/pois.geojson needs a category that visualization.py can color and
+    cluster by, or all markers collapse into one grey bucket."""
     pois = gpd.read_file(data_collection.POIS_PATH)
 
     assert len(pois) == data_collection.TARGET_POI_COUNT
@@ -128,6 +126,45 @@ def test_committed_pois_file_has_a_real_category_for_every_row():
             f"POI {row['name']!r} has unexpected category {category!r}"
         )
 
-    # The bug being guarded against produced exactly one bucket for all
-    # 150 markers; real data spans many categories.
+    # Real data spans many categories; a handful proves they are not all
+    # collapsed into one.
     assert len(set(pois["category"])) >= 5
+
+
+def _two_node_graph():
+    # osmnx's nearest_nodes needs the graph's CRS, which real downloaded
+    # graphs always carry.
+    g = nx.MultiDiGraph(crs="EPSG:4326")
+    g.add_node("SW", y=10.770, x=106.690)
+    g.add_node("NE", y=10.780, x=106.700)
+    return g
+
+
+def test_snap_pois_to_graph_picks_the_nearest_node():
+    pois = gpd.GeoDataFrame(
+        [{"name": "Near SW", "geometry": Point(106.6905, 10.7702)},
+         {"name": "Near NE", "geometry": Point(106.6995, 10.7798)}],
+        crs="EPSG:4326",
+    )
+    snapped = data_collection.snap_pois_to_graph(pois, _two_node_graph())
+    assert list(snapped["node_id"]) == ["SW", "NE"]
+
+
+def test_snap_pois_to_graph_uses_the_centroid_of_a_polygon_poi():
+    # A park-sized polygon centered on the NE node: the snap follows its
+    # centroid (an area-wide POI still has one entrance point in the graph).
+    park = Polygon([(106.6985, 10.7785), (106.7015, 10.7785),
+                    (106.7015, 10.7815), (106.6985, 10.7815)])
+    pois = gpd.GeoDataFrame([{"name": "Park", "geometry": park}], crs="EPSG:4326")
+    snapped = data_collection.snap_pois_to_graph(pois, _two_node_graph())
+    assert snapped["node_id"].iloc[0] == "NE"
+    assert "node_id" not in pois.columns  # the input frame is left untouched
+
+
+def test_load_or_download_graph_reports_a_download_failure(tmp_path, monkeypatch):
+    def offline(**kwargs):
+        raise OSError("no network")
+
+    monkeypatch.setattr(data_collection.ox, "graph_from_bbox", offline)
+    with pytest.raises(RuntimeError, match="no cache"):
+        data_collection.load_or_download_graph(str(tmp_path / "graph.graphml"))
