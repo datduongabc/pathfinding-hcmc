@@ -30,15 +30,21 @@ def heuristic_hours(lat, lon, goal_lat, goal_lon, hour, v_free_bound_kmh,
                      window_hours=traffic_model.WINDOW_HOURS):
     """h(n, t): admissible lower bound on remaining travel time, in hours.
 
-    Bounds speed by the worst (highest) time-of-day multiplier reachable
-    within `window_hours` of `hour`, not just at `hour` itself - see the
-    Heuristic section of
-    docs/superpowers/specs/2026-09-16-hcmc-pathfinding-design.md for why
-    using m_time(t) alone is not admissible.
+    Assumes the best case for the remaining trip: straight-line distance at
+    the fastest free-flow speed in the graph, at the best time-of-day
+    multiplier reachable within `window_hours`. Using the multiplier at
+    `hour` alone would overestimate whenever traffic clears up later in the
+    trip, and an overestimate breaks A*'s optimality guarantee.
+
+    Consistency does not hold everywhere: in the hours just before a traffic
+    recovery the window's best multiplier jumps up as the trip moves
+    forward, so h can drop by more than the edge cost. astar.find_path
+    reopens nodes to stay optimal despite that.
     """
     dist_km = haversine_km(lat, lon, goal_lat, goal_lon)
     m_bound = traffic_model.max_time_multiplier_over_window(hour, window_hours)
     denom = v_free_bound_kmh * m_bound
     if denom <= 0:
+        # No usable speed bound (empty or malformed graph): refuse to guess.
         return float("inf")
     return dist_km / denom

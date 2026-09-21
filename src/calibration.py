@@ -24,22 +24,13 @@ HCMC_TZ = timezone(timedelta(hours=7))
 
 FLOW_URL = "https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json"
 
-# ~12 known major corridor points in the bounding box (see spec's Traffic
-# calibration section) used as fixed sample points for real speed checks.
+# Fixed sample points on major corridors inside the bounding box, one
+# TomTom request each.
 #
-# Keys must be the exact `name` string OSMnx stores on the corresponding
-# edges in data/graph.graphml, since traffic_model.corridor_multiplier does
-# an exact-match dict lookup keyed by that same edge `name` attribute - an
-# ASCII-transliterated key (e.g. "Dien Bien Phu") never matches the
-# diacritic-bearing name OSM actually stores ("Điện Biên Phủ"), which made
-# every corridor's calibration silently inert. Verified against the
-# committed graph: most streets are stored bare, but "3 Tháng 2" is stored
-# with an "Đường " (road) prefix - both were confirmed with
-# `networkx.read_graphml` + a substring search before picking these keys.
-# "Trường Chinh" was dropped (outside this bounding box - zero matching
-# edges) and the redundant "Điện Biên Phủ" duplicate (Bình Thạnh segment
-# has no distinct OSM name) was replaced with two more real, high-frequency
-# corridors confirmed present in the graph.
+# Keys must match the edge `name` in data/graph.graphml exactly, including
+# diacritics and any prefix OSM stores (e.g. "Đường 3 Tháng 2"), because
+# traffic_model.corridor_multiplier looks streets up by exact string. A key
+# that doesn't match is not an error, the calibration just never applies.
 CORRIDORS = {
     "Điện Biên Phủ": (10.7893, 106.6923),
     "Cách Mạng Tháng Tám": (10.7769, 106.6883),
@@ -89,17 +80,15 @@ def fetch_corridor_snapshot(api_key, corridors=None, session=None):
     traffic_model.time_of_day_multiplier expects; `captured_at` keeps the
     explicit +07:00 offset so the snapshot stays self-documenting.
 
-    The corridor requests are independent of each other, so they're fired
-    concurrently (one thread per corridor) rather than one-by-one - a full
-    snapshot no longer takes the sum of every corridor's latency (up to
-    ~120s for 12 corridors at the 10s timeout), just roughly the slowest one.
-    If `session` is passed explicitly, it is shared across those threads -
-    the default (module-level `requests`, used when `session=None`) issues
-    a fresh, thread-safe connection per call, but `requests.Session` itself
-    is not documented as thread-safe, so pass one only if you know it's
-    safe for your use.
-    Raises requests.RequestException (via raise_for_status) on HTTP failure;
-    entries with an unexpected response shape are skipped, not fatal.
+    Requests run concurrently, one thread per corridor: they are independent,
+    and sequentially a full snapshot could take minutes if the API is slow.
+    A `session` you pass in is shared across those threads, but
+    `requests.Session` is not documented as thread-safe, so pass one only if
+    you know that is safe. The default (module-level `requests`) opens a
+    separate connection per call.
+
+    Raises requests.RequestException on HTTP failure. A response with an
+    unexpected shape skips that corridor instead of failing the snapshot.
     """
     corridors = corridors or CORRIDORS
     http = session or requests

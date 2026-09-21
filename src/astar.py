@@ -22,7 +22,15 @@ class MissingEdgeLengthError(RuntimeError):
     """
 
 
+# Arrival times are floats that accumulate rounding error over many edges.
+# Differences below this (about 3.6 microseconds) are treated as equal, so
+# a rounding artifact never counts as an improvement or a stale entry.
+TIME_EPSILON_HOURS = 1e-9
+
+
 class PathResult:
+    """A computed route: node ids in order, its totals, and per-edge speeds."""
+
     def __init__(self, node_path, total_travel_time_hours, total_distance_km, edge_trace):
         self.node_path = node_path
         self.total_travel_time_hours = total_travel_time_hours
@@ -30,11 +38,25 @@ class PathResult:
         self.edge_trace = edge_trace  # list of (u, v, speed_kmh)
 
 
-def _edge_data(graph, u, v):
-    # osmnx MultiDiGraph: take the shortest of any parallel edges between u, v.
+def shortest_parallel_edge(graph, u, v):
+    """Attributes of the edge u -> v to cost.
+
+    OSMnx can keep several parallel edges between the same two nodes (e.g. a
+    road and a service lane). The search and the map both need to agree on
+    which one is used, so both go through this function.
+    """
     edges = graph.get_edge_data(u, v)
     key = min(edges, key=lambda k: edges[k].get("length", float("inf")))
     return edges[key]
+
+
+def _street_name(edge):
+    # OSMnx stores a list when an edge carries several names; the first is
+    # enough to key the corridor lookup.
+    name = edge.get("name")
+    if isinstance(name, list):
+        return name[0] if name else None
+    return name
 
 
 def find_path(graph, start_node, goal_node, departure_hour, v_free_bound_kmh=None,
@@ -67,38 +89,35 @@ def find_path(graph, start_node, goal_node, departure_hour, v_free_bound_kmh=Non
     edge_cache = {}  # (u, v) -> edge_data, since reopening can revisit the same edge
 
     while open_heap:
-        f, _, node, arrival_hour = heapq.heappop(open_heap)
+        _, _, node, arrival_hour = heapq.heappop(open_heap)
 
-        if arrival_hour > best_g.get(node, float("inf")) + 1e-9:
-            continue  # stale heap entry
+        if arrival_hour > best_g.get(node, float("inf")) + TIME_EPSILON_HOURS:
+            continue  # a better arrival was found after this entry was queued
         if node == goal_node:
             return _reconstruct(came_from, start_node, goal_node, departure_hour, arrival_hour)
 
         for neighbor in graph.successors(node):
             edge = edge_cache.get((node, neighbor))
             if edge is None:
-                edge = edge_cache[(node, neighbor)] = _edge_data(graph, node, neighbor)
+                edge = edge_cache[(node, neighbor)] = shortest_parallel_edge(graph, node, neighbor)
             length_m = edge.get("length")
             if length_m is None:
                 raise MissingEdgeLengthError(
                     f"Edge ({node}, {neighbor}) has no 'length' attribute")
-            street_name = edge.get("name")
-            if isinstance(street_name, list):
-                street_name = street_name[0] if street_name else None
             travel_time = traffic_model.edge_travel_time_hours(
-                length_m, edge.get("highway"), street_name, arrival_hour, corridor_bias)
+                length_m, edge.get("highway"), _street_name(edge), arrival_hour, corridor_bias)
             neighbor_arrival = arrival_hour + travel_time
 
-            if neighbor_arrival < best_g.get(neighbor, float("inf")) - 1e-9:
+            # No closed set: the heuristic is not consistent everywhere (see
+            # heuristic.heuristic_hours), so a node popped earlier may still be
+            # reachable sooner. Any strictly better arrival re-queues it,
+            # which keeps the result optimal.
+            if neighbor_arrival < best_g.get(neighbor, float("inf")) - TIME_EPSILON_HOURS:
                 best_g[neighbor] = neighbor_arrival
                 speed_kmh = (length_m / 1000.0) / travel_time if travel_time > 0 else 0.0
                 came_from[neighbor] = (node, edge, speed_kmh)
                 f_neighbor = neighbor_arrival + h(neighbor, neighbor_arrival)
                 heapq.heappush(open_heap, (f_neighbor, next(counter), neighbor, neighbor_arrival))
-                # Reopening is deliberate: a node already relaxed can still be
-                # re-pushed here on a strictly better g, since the heuristic
-                # is only proven consistent outside the rush-hour recovery
-                # windows (see docs/superpowers/specs/2026-09-16-hcmc-pathfinding-design.md).
 
     raise NoPathFoundError(f"No path found from {start_node} to {goal_node}")
 

@@ -5,9 +5,18 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Floor on effective speed (about walking pace). Without it, a heavily
+# congested edge could get a near-zero speed and an unbounded travel time.
 MIN_SPEED_KMH = 5.0
+
+# How far ahead the heuristic looks for a faster time of day. The
+# admissibility argument only holds for trips shorter than this (astar warns
+# otherwise); trips inside central HCMC take well under an hour, so 3h is a
+# generous margin. A wider window is safer but weakens the heuristic.
 WINDOW_HOURS = 3.0
 
+# Assumed free-flow speeds per OSM road class in dense urban HCMC, not
+# measured values. TomTom calibration corrects the residual on major streets.
 FREE_FLOW_SPEED_KMH = {
     "motorway": 80.0,
     "motorway_link": 60.0,
@@ -26,14 +35,14 @@ FREE_FLOW_SPEED_KMH = {
 }
 DEFAULT_FREE_FLOW_SPEED_KMH = 30.0
 
-# (hour, multiplier) anchors, piecewise-linear between consecutive pairs.
-# Low at night (0-6h, 22-24h), high during rush (7-9h, 16-19h; note the
-# 16-17h approach to the evening peak is itself decreasing), moderate
-# mid-day (10-16h). The only rising stretches of m_time itself are 9-10h
-# and 19-22h; the windowed heuristic's consistency-violation windows are
-# the ~3h-earlier stretches (6h40m, 7h) and (16h37m30s, 19h), where the
-# sliding window's forward edge climbs those rises - see the spec's
-# Heuristic section.
+# (hour, multiplier) anchors, linearly interpolated in between. The
+# multiplier scales free-flow speed: near 1 means free-flowing, low means
+# congested. Free-flowing at night (22-6h), congested in the morning rush
+# (7-9h) and evening rush (17-19h), moderate in between.
+#
+# Speed only recovers between 9-10h and 19-22h. That is why the heuristic
+# needs a look-ahead window (see max_time_multiplier_over_window) and why it
+# is not strictly consistent in the hours just before those recoveries.
 TIME_OF_DAY_ANCHORS = [
     (0.0, 0.95),
     (6.0, 0.95),
@@ -48,6 +57,14 @@ TIME_OF_DAY_ANCHORS = [
 ]
 
 WINDOW_SAMPLE_STEP_HOURS = 1.0 / 12.0  # 5-minute resolution
+
+# Corridor bias may only slow traffic down, never speed it up. The heuristic
+# bounds speed by (fastest free-flow speed x time multiplier), so a bias
+# above 1.0 could push a real edge past that bound and make the heuristic
+# overestimate. The lower bound keeps one bad snapshot (an accident, a
+# closure) from making a street effectively impassable.
+CORRIDOR_BIAS_MIN = 0.5
+CORRIDOR_BIAS_MAX = 1.0
 
 
 def free_flow_speed_kmh(highway):
@@ -76,10 +93,10 @@ def max_time_multiplier_over_window(hour, window_hours=WINDOW_HOURS,
                                      step_hours=WINDOW_SAMPLE_STEP_HOURS):
     """Sup of time_of_day_multiplier over [hour, hour + window_hours].
 
-    Used by heuristic.py as the heuristic's speed bound so h(n, t) stays
-    admissible even though m_time may rise later in the trip - see the
-    "Why a window, and why 3 hours" section of
-    docs/superpowers/specs/2026-09-16-hcmc-pathfinding-design.md.
+    Used by heuristic.py as the heuristic's speed bound. Using the multiplier
+    at `hour` alone would overestimate the remaining time whenever traffic
+    clears up later in the trip (e.g. leaving at 8:30 and finishing after
+    10:00), so h(n, t) would no longer be admissible.
     """
     n_steps = max(1, int(round(window_hours / step_hours)))
     return max(
@@ -91,11 +108,11 @@ def max_time_multiplier_over_window(hour, window_hours=WINDOW_HOURS,
 def load_corridor_bias(calibration_path="data/tomtom_calibration.json"):
     """Fit a per-corridor bias multiplier from cached TomTom snapshots.
 
-    Returns {street_name: bias} where bias is in [0.5, 1.0] - the
-    residual, street-specific dampening left after factoring out the
-    generic time-of-day multiplier already applied by
-    time_of_day_multiplier. Falls back to an empty dict (all corridors
-    default to bias 1.0) if the calibration file is missing or malformed.
+    Returns {street_name: bias}: how much slower a street runs than the
+    city-wide time-of-day multiplier already predicts, so the two effects
+    are not double counted. Falls back to an empty dict (every street gets
+    bias 1.0) if the calibration file is missing or malformed, so the
+    search still works without calibration data.
     """
     path = Path(calibration_path)
     if not path.exists():
@@ -128,7 +145,7 @@ def load_corridor_bias(calibration_path="data/tomtom_calibration.json"):
     bias = {}
     for street, values in residuals.items():
         avg = sum(values) / len(values)
-        bias[street] = max(0.5, min(1.0, avg))
+        bias[street] = max(CORRIDOR_BIAS_MIN, min(CORRIDOR_BIAS_MAX, avg))
     return bias
 
 
@@ -139,6 +156,8 @@ def corridor_multiplier(street_name, corridor_bias):
 
 
 def effective_speed_kmh(highway, street_name, hour, corridor_bias):
+    # v_free: free-flow speed of the road class. m_time: city-wide slowdown
+    # at this hour. m_corr: extra slowdown measured on this specific street.
     v_free = free_flow_speed_kmh(highway)
     m_time = time_of_day_multiplier(hour)
     m_corr = corridor_multiplier(street_name, corridor_bias)
