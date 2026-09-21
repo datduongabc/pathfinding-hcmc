@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+cache/
+.coverage
+.pytest_cache/
+data/last_result_map.html
+.claude/
