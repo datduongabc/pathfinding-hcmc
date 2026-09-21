@@ -13,9 +13,7 @@ logger = logging.getLogger(__name__)
 BBOX = {"north": 10.8105, "south": 10.7350, "east": 106.7250, "west": 106.6550}
 
 # osmnx>=2.0 expects bbox as (left, bottom, right, top) = (west, south, east,
-# north) - built once here so the two download call sites below can't drift
-# apart the way they already have (two separate historical bug-fix commits
-# each corrected one call site's argument order and missed the other).
+# north). Built once so both download calls share the same argument order.
 OSMNX_BBOX = (BBOX["west"], BBOX["south"], BBOX["east"], BBOX["north"])
 
 POI_TAGS = {
@@ -26,7 +24,10 @@ POI_TAGS = {
     "historic": True,
 }
 
+# The assignment needs at least 100 POIs; 150 leaves headroom for a few that
+# get dropped or share a graph node.
 TARGET_POI_COUNT = 150
+# Fixed seed so a re-download samples the same POIs.
 SAMPLE_SEED = 42
 
 GRAPH_PATH = "data/graph.graphml"
@@ -129,9 +130,11 @@ def load_or_download_pois(pois_path=POIS_PATH, target_count=TARGET_POI_COUNT):
 def snap_pois_to_graph(pois, graph):
     """Return `pois` with a `node_id` column, each POI snapped to its
     nearest graph node."""
-    xs = pois.geometry.centroid.x
-    ys = pois.geometry.centroid.y
-    node_ids = ox.distance.nearest_nodes(graph, xs, ys)
+    # Take centroids in a metric CRS (UTM zone 48N covers HCMC): centroids of
+    # polygon POIs (parks, buildings) are only correct in projected space.
+    # Then convert back, since nearest_nodes expects lon/lat like the graph.
+    centroids = pois.geometry.to_crs(epsg=32648).centroid.to_crs(pois.crs)
+    node_ids = ox.distance.nearest_nodes(graph, centroids.x, centroids.y)
     pois = pois.copy()
     pois["node_id"] = node_ids
     return pois
