@@ -33,7 +33,7 @@ SPEED_COLOR_STOPS = [
 ]
 
 
-def _speed_color(v_eff_kmh, v_free_kmh):
+def speed_color(v_eff_kmh, v_free_kmh):
     ratio = 0.0 if v_free_kmh <= 0 else max(0.0, min(1.0, v_eff_kmh / v_free_kmh))
     for stop, color in SPEED_COLOR_STOPS:
         if ratio <= stop:
@@ -85,7 +85,7 @@ def _add_path(fmap, graph, path_result, departure_hour):
     """Draw the route colored by speed, its start/goal markers, and a legend."""
     node_data = {n: graph.nodes[n] for n in path_result.node_path}
     for u, v, speed_kmh in path_result.edge_trace:
-        color = _speed_color(speed_kmh, _edge_free_flow_speed_kmh(graph, u, v))
+        color = speed_color(speed_kmh, _edge_free_flow_speed_kmh(graph, u, v))
         folium.PolyLine(
             [(node_data[u]["y"], node_data[u]["x"]), (node_data[v]["y"], node_data[v]["x"])],
             color=color, weight=5, opacity=0.9,
