@@ -1,6 +1,6 @@
 # Pahtfinding HCMC
 
-**Language:** Python
+**Program Language:** Python
 
 ## TOPIC: Pathfinding in Ho Chi Minh City
 
